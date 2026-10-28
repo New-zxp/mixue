@@ -1,12 +1,9 @@
-import csv
-import io
-import json
 import secrets
 import threading
 import uuid
 from datetime import datetime
 from urllib.parse import urlsplit
-from flask import Flask, jsonify, request, render_template, Response, send_file, abort
+from flask import Flask, jsonify, request, render_template, send_file, abort
 from werkzeug.exceptions import HTTPException
 from tea_site import storage
 from tea_site.scope import DISTRICTS,LABELS
@@ -15,8 +12,6 @@ def now():
     return datetime.now().astimezone().isoformat(timespec="seconds")
 from tea_site.classify import VERSION
 from tea_site.model import analyze,parameters
-from tea_site.density import kde
-from tea_site.insights import dataset_insights
 from tea_site.place_search import search_saved_places
 
 app=Flask(__name__)
@@ -76,19 +71,8 @@ def status():
 @app.get('/api/datasets/<dataset>')
 def dataset(dataset):return jsonify(storage.get_dataset(dataset))
 
-@app.get('/api/insights/<dataset>')
-def insights(dataset):
-    data=storage.get_dataset(dataset)
-    if data['status']=='running':raise ValueError('当前数据不可用于分析')
-    if data['meta'].get('classification_version')!=VERSION:raise ValueError('请先清洗旧版快照再统计规律')
-    return jsonify(dataset_insights(data))
-
-@app.get('/api/density/<dataset>')
-def density(dataset):return jsonify(kde(storage.get_dataset(dataset)['pois']))
-
 def persist_job(jid,info):
     jobs[jid].update(info)
-    with storage.connect() as c:c.execute('INSERT OR REPLACE INTO tasks VALUES(?,?)',(jid,json.dumps(jobs[jid],ensure_ascii=False,allow_nan=False)))
 
 def start_job(kind,fn):
     if not job_lock.acquire(blocking=False):return jsonify(error='已有任务运行，请等待完成'),409
@@ -103,61 +87,16 @@ def start_job(kind,fn):
     threading.Thread(target=run,daemon=True).start()
     return jsonify(job=jid),202
 
-@app.get('/api/jobs')
-def all_jobs():
-    with storage.connect() as c:rows=[json.loads(r[0]) for r in c.execute('SELECT payload FROM tasks')]
-    rows.sort(key=lambda r:r.get('created',''),reverse=True)
-    return jsonify([{k:v for k,v in r.items() if k!='result'} for r in rows[:20]])
-
-@app.post('/api/jobs/<jid>/cancel')
-def cancel_job(jid):
-    if jid not in cancellations or jobs[jid]['done']:raise ValueError('任务已结束或不在本进程运行')
-    cancellations[jid].set();persist_job(jid,{'message':'正在取消，将在当前请求返回后保存进度'})
-    return jsonify(ok=True)
-
 @app.get('/api/jobs/<jid>')
 def job(jid):
     if jid in jobs:return jsonify(jobs[jid])
-    with storage.connect() as c:r=c.execute('SELECT payload FROM tasks WHERE id=?',(jid,)).fetchone()
-    if not r:raise ValueError('任务不存在')
-    return jsonify(json.loads(r[0]))
+    raise ValueError('任务不存在，请重新开始选址')
 
 @app.post('/api/places')
 def places():
     raw=request.get_json()
     if not isinstance(raw,dict):raise ValueError('参数错误')
     return jsonify(search_saved_places(raw.get('query'), raw.get('dataset')))
-
-@app.post('/api/datasets/<dataset>/archive')
-def archive_dataset(dataset):
-    d=storage.get_dataset(dataset)
-    if d['status']=='running':raise ValueError('当前数据不可修改')
-    d['meta']['archived']=request.get_json().get('archived',True) is True
-    storage.save_dataset(dataset,d['status'],d['meta']);return jsonify(ok=True)
-
-@app.get('/api/exclusions/<dataset>')
-def exclusions(dataset):
-    storage.get_dataset(dataset);return jsonify(storage.list_exclusions(dataset))
-
-@app.post('/api/exclusions/<dataset>')
-def add_exclusion(dataset):
-    from tea_site.model import parameters
-    storage.get_dataset(dataset);row=request.get_json();parameters({'exclusions':[row]})
-    row['id']=uuid.uuid4().hex[:12];row['name']=str(row.get('name','人工排除区域'))[:100]
-    with storage.connect() as c:c.execute('INSERT INTO exclusions VALUES(?,?,?)',(dataset,row['id'],json.dumps(row,ensure_ascii=False)))
-    return jsonify(row)
-
-@app.post('/api/exclusions/<dataset>/<eid>/remove')
-def remove_exclusion(dataset,eid):
-    with storage.connect() as c:c.execute('DELETE FROM exclusions WHERE dataset=? AND id=?',(dataset,eid))
-    return jsonify(ok=True)
-
-def save_run(dataset,result):
-    rid=uuid.uuid4().hex[:12];result['run_id']=rid;result['dataset']=dataset
-    result['created']=datetime.now().astimezone().isoformat(timespec='seconds')
-    result['dataset_meta']=storage.get_dataset(dataset)['meta']
-    with storage.connect() as c:c.execute('INSERT INTO runs VALUES(?,?,?,?)',(rid,dataset,result['created'],json.dumps(result,ensure_ascii=False,allow_nan=False)))
-    return result
 
 @app.post('/api/analyze')
 def analyze_route():
@@ -180,64 +119,9 @@ def analyze_route():
     if any(d not in data['meta'].get('districts',[]) for d in raw['districts']):raise ValueError('所选行政区不在当前采集范围内')
     def task(progress,cancel):
         progress({'message':'固定1公里评估，逐一比较范围内候选点…'})
-        return save_run(dataset_id,analyze(data['pois'],raw,cancel))
+        return analyze(data['pois'],raw,cancel)
     return start_job('analysis',task)
-
-@app.post('/api/sensitivity')
-def sensitivity_route():
-    return jsonify(error='已按需求固定为1公里；不再提供半径调整功能'),410
-
-@app.get('/api/runs')
-def runs():
-    with storage.connect() as c:
-        return jsonify([{'id':r['id'],'dataset':r['dataset'],'created':r['created'],'version':json.loads(r['payload']).get('model_version',1),'status':json.loads(r['payload']).get('status','legacy')} for r in c.execute('SELECT * FROM runs ORDER BY created DESC LIMIT 100')])
-
-@app.get('/api/runs/<rid>')
-def run_detail(rid):
-    return jsonify(read_run(rid))
-
-def read_run(rid):
-    with storage.connect() as c:r=c.execute('SELECT payload FROM runs WHERE id=?',(rid,)).fetchone()
-    if not r:raise ValueError('方案不存在')
-    return json.loads(r[0])
-
-def csv_response(rows,filename):
-    out=io.StringIO(newline='')
-    if rows:
-        w=csv.DictWriter(out,fieldnames=list(rows[0]));w.writeheader()
-        for row in rows:
-            safe=dict(row)
-            for k,v in safe.items():
-                if isinstance(v,(dict,list)):safe[k]=json.dumps(v,ensure_ascii=False)
-                if isinstance(safe[k],str) and safe[k].lstrip().startswith(('=','+','-','@','\t','\r')):safe[k]="'"+safe[k]
-            w.writerow(safe)
-    return Response('\ufeff'+out.getvalue(),mimetype='text/csv',headers={'Content-Disposition':f'attachment; filename="{filename}"'})
-
-@app.get('/api/export/dataset/<dataset>')
-def export_dataset(dataset):
-    data=storage.get_dataset(dataset)
-    return csv_response(data['pois'],f'pois_{dataset}.csv')
-
-@app.get('/api/export/run/<rid>')
-def export_run(rid):
-    r=read_run(rid)
-    if request.args.get('format')=='json':
-        return Response(json.dumps(r,ensure_ascii=False,indent=2),mimetype='application/json',headers={'Content-Disposition':f'attachment; filename="analysis_{rid}.json"'})
-    rows=[]
-    for p in r['plans']:
-        for s in p['selected']:rows.append({'method':p['method'],**s,'plan_new_coverage':p['new_coverage'],'plan_total_coverage':p['total_coverage'],'objective':p['objective'],'solver_status':p['solver_status'],'input_sha256':r['input_sha256']})
-    if not rows:rows=[{'status':r.get('status'),'reason':r.get('reason'),'input_sha256':r['input_sha256']}]
-    return csv_response(rows,f'locations_{rid}.csv')
 
 if __name__=='__main__':
     storage.connect().close()
-    with storage.connect() as con:
-        for row in con.execute('SELECT id,payload FROM tasks').fetchall():
-            task=json.loads(row['payload'])
-            if not task.get('done'):
-                task.update(done=True,error='服务已重启，请重新运行分析')
-                con.execute('UPDATE tasks SET payload=? WHERE id=?',(json.dumps(task,ensure_ascii=False),row['id']))
-        for row in con.execute("SELECT id,meta FROM datasets WHERE status='running'").fetchall():
-            meta=json.loads(row['meta']);meta['error']='上次服务中断，保留已采集的部分数据'
-            con.execute('UPDATE datasets SET status=?,meta=? WHERE id=?',('interrupted',json.dumps(meta,ensure_ascii=False),row['id']))
     app.run(host='127.0.0.1',port=8765,debug=False,threaded=True)
