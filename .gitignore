@@ -1,0 +1,43 @@
+# Local secrets
+config.yaml
+.env
+.env.*
+*.pem
+*.key
+
+# Environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# Local datasets, map archives, results and working files
+data/
+results/
+work/
+archive/
+*.sqlite*
+*.db
+*.pmtiles
+*.csv
+*.xlsx
+*.zip
+scripts/bin/
+
+# Academic documents are not part of this repository
+*.docx
+*.doc
+*.pdf
+*.pptx
+*.tex
+*.bib
+*论文*
+*周报*
+研究设计.md
