@@ -24,8 +24,8 @@ def test_read_and_exports(client):
     assert client.get('/api/datasets/unknown').status_code==400
 
 def test_csrf_and_host(client):
-    assert client.post('/api/collect',json={}).status_code==403
-    assert client.post('/api/collect',json={},headers={'X-Research-Token':web.TOKEN,'Origin':'https://evil.example'}).status_code==403
+    assert client.post('/api/analyze',json={}).status_code==403
+    assert client.post('/api/analyze',json={},headers={'X-Research-Token':web.TOKEN,'Origin':'https://evil.example'}).status_code==403
     assert client.get('/api/status',headers={'Host':'evil.example'}).status_code==403
 
 def test_saved_result_export(client):

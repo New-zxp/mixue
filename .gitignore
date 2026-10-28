@@ -19,7 +19,12 @@ node_modules/
 Thumbs.db
 
 # Local datasets, map archives, results and working files
-data/
+/data/*
+!/data/research.sqlite3
+!/data/maps/
+/data/maps/*
+!/data/maps/shenyang-streets.pmtiles
+!/data/maps/manifest.json
 results/
 work/
 archive/
@@ -41,3 +46,7 @@ scripts/bin/
 *论文*
 *周报*
 研究设计.md
+
+# Bundled runtime assets
+!/data/research.sqlite3
+!/data/maps/shenyang-streets.pmtiles

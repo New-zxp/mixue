@@ -8,4 +8,4 @@ $taskExpected = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'app.py'))
 $taskDetails = Get-CimInstance Win32_Process -Filter "ProcessId=$($taskInfo.id)"
 if ($taskInfo.app -ne $taskExpected -or [Math]::Abs(($taskProcess.StartTime.ToUniversalTime() - ([datetime]$taskInfo.started).ToUniversalTime()).TotalMilliseconds) -gt 1 -or -not $taskDetails.CommandLine.Contains($taskExpected)) { throw 'Process identity changed; refusing to stop another process.' }
 Stop-Process -Id $taskInfo.id
-Write-Output 'Tea Atlas stopped. Interrupted collections can be resumed after restart.'
+Write-Output 'Tea Atlas stopped. Restart the app to run analysis again.'

@@ -9,11 +9,15 @@ from urllib.parse import urlsplit
 from flask import Flask, jsonify, request, render_template, Response, send_file, abort
 from werkzeug.exceptions import HTTPException
 from tea_site import storage
-from tea_site.collector import collect,DISTRICTS,LABELS,derive,search_places,now
+from tea_site.scope import DISTRICTS,LABELS
+
+def now():
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 from tea_site.classify import VERSION
 from tea_site.model import analyze,parameters
 from tea_site.density import kde
 from tea_site.insights import dataset_insights
+from tea_site.place_search import search_saved_places
 
 app=Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD']=True
@@ -53,21 +57,21 @@ def missing(exc):return jsonify(error='资源不存在'),404
 
 @app.route('/')
 def index():
-    files=[storage.ROOT/'data'/'maps'/f'shenyang-{kind}.pmtiles' for kind in ('streets','terrain')]
+    files=[storage.ROOT/'data'/'maps'/f'shenyang-{kind}.pmtiles' for kind in ('streets',)]
     version='-'.join(str(p.stat().st_mtime_ns) if p.is_file() else 'missing' for p in files)
     return render_template('index.html',token=TOKEN,map_version=version)
 
 @app.get('/maps/<name>.pmtiles')
 def offline_map(name):
     # A fixed allowlist keeps local data/config files out of this public route.
-    if name not in {'shenyang-streets','shenyang-terrain'}:abort(404)
+    if name not in {'shenyang-streets'}:abort(404)
     path=storage.ROOT/'data'/'maps'/f'{name}.pmtiles'
     if not path.is_file():abort(404)
     return send_file(path,mimetype='application/octet-stream',conditional=True,max_age=86400)
 
 @app.get('/api/status')
 def status():
-    return jsonify(datasets=storage.datasets(),districts=DISTRICTS,labels=LABELS,key_configured=(storage.ROOT/'config.yaml').exists())
+    return jsonify(datasets=storage.datasets(),districts=DISTRICTS,labels=LABELS)
 
 @app.get('/api/datasets/<dataset>')
 def dataset(dataset):return jsonify(storage.get_dataset(dataset))
@@ -75,7 +79,7 @@ def dataset(dataset):return jsonify(storage.get_dataset(dataset))
 @app.get('/api/insights/<dataset>')
 def insights(dataset):
     data=storage.get_dataset(dataset)
-    if data['status']=='running':raise ValueError('数据正在采集，请等待完成后查看规律')
+    if data['status']=='running':raise ValueError('当前数据不可用于分析')
     if data['meta'].get('classification_version')!=VERSION:raise ValueError('请先清洗旧版快照再统计规律')
     return jsonify(dataset_insights(data))
 
@@ -98,12 +102,6 @@ def start_job(kind,fn):
         finally:job_lock.release()
     threading.Thread(target=run,daemon=True).start()
     return jsonify(job=jid),202
-
-@app.post('/api/collect')
-def collect_route():
-    options=request.get_json()
-    if not isinstance(options,dict):raise ValueError('请求参数格式错误')
-    return start_job('collect',lambda progress,cancel:collect(options,progress,cancel))
 
 @app.get('/api/jobs')
 def all_jobs():
@@ -128,15 +126,12 @@ def job(jid):
 def places():
     raw=request.get_json()
     if not isinstance(raw,dict):raise ValueError('参数错误')
-    return jsonify(search_places(raw.get('query')))
-
-@app.post('/api/derive')
-def derive_route():return jsonify(dataset=derive(request.get_json().get('datasets')))
+    return jsonify(search_saved_places(raw.get('query'), raw.get('dataset')))
 
 @app.post('/api/datasets/<dataset>/archive')
 def archive_dataset(dataset):
     d=storage.get_dataset(dataset)
-    if d['status']=='running':raise ValueError('请先停止采集')
+    if d['status']=='running':raise ValueError('当前数据不可修改')
     d['meta']['archived']=request.get_json().get('archived',True) is True
     storage.save_dataset(dataset,d['status'],d['meta']);return jsonify(ok=True)
 
@@ -169,15 +164,15 @@ def analyze_route():
     raw=request.get_json()
     if not isinstance(raw,dict):raise ValueError('请求参数格式错误')
     dataset_id=str(raw.get('dataset',''));data=storage.get_dataset(dataset_id)
-    if data['status']=='running':raise ValueError('请等待采集完成后再分析')
-    if data['meta'].get('classification_version')!=VERSION:raise ValueError('旧版数据尚未校验类别，请先点击“清洗当前快照”')
+    if data['status']=='running':raise ValueError('当前数据不可用于分析')
+    if data['meta'].get('classification_version')!=VERSION:raise ValueError('当前数据版本不支持分析')
     # Nearby snapshots cannot be reused as evidence for a larger or different area.
     parameters(raw)  # Validate before inspecting nested values or starting a job.
     source_area=data['meta'].get('area');requested=raw.get('area')
     if source_area:
         if not requested:raw['area']=source_area
         elif abs(float(requested.get('lon',0))-source_area['lon'])>1e-5 or abs(float(requested.get('lat',0))-source_area['lat'])>1e-5 or float(requested.get('radius_m',0))>source_area['radius_m']:
-            raise ValueError('当前数据只覆盖原地点附近，请为新范围采集数据')
+            raise ValueError('当前数据只覆盖原地点附近，请缩小选址范围')
     raw['collection_meta']=data['meta']
     raw['boundaries']=data['meta'].get('boundaries',{})
     raw['exclusions']=storage.list_exclusions(dataset_id)
@@ -240,7 +235,7 @@ if __name__=='__main__':
         for row in con.execute('SELECT id,payload FROM tasks').fetchall():
             task=json.loads(row['payload'])
             if not task.get('done'):
-                task.update(done=True,error='服务已重启，采集进度已保存，可选择原快照续采')
+                task.update(done=True,error='服务已重启，请重新运行分析')
                 con.execute('UPDATE tasks SET payload=? WHERE id=?',(json.dumps(task,ensure_ascii=False),row['id']))
         for row in con.execute("SELECT id,meta FROM datasets WHERE status='running'").fetchall():
             meta=json.loads(row['meta']);meta['error']='上次服务中断，保留已采集的部分数据'

@@ -66,8 +66,7 @@ def test_invalid_scope(raw):
 
 
 def test_incomplete_collection_is_not_no_suitable():
-    from tea_site.collector import initial_plan
-    plan=initial_plan(['210102'],'test')
+    plan=[{'district':'210102','category':cat,'status':'pending'} for cat in ['target','competitor','residential','office','school','mall','metro','bus']]
     r=run(collection_meta={'plan':plan})
     assert r['status']=='insufficient_data' and not r['plans']
     for q in plan:q['status']='capped'
