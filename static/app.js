@@ -66,7 +66,7 @@ function drawFacilities(){
 }
 map.on('moveend',queueFacilities);
 function notify(message){$('#notice').textContent=message;$('#notice').hidden=!message}
-async function api(path,body){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Research-Token':$('meta[name=research-token]').content},body:JSON.stringify(body)});let result;try{result=await response.json()}catch{throw Error('服务暂时无法连接，请刷新页面重试')}if(!response.ok)throw Error(result.error||'请求失败');return result}
+async function api(path,body){const response=await fetch((document.querySelector('meta[name=app-base]')?.content||'')+path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Research-Token':$('meta[name=research-token]').content},body:JSON.stringify(body)});let result;try{result=await response.json()}catch{throw Error('服务暂时无法连接，请刷新页面重试')}if(!response.ok)throw Error(result.error||'请求失败');return result}
 function panel(open){$('#plan-panel').hidden=!open;$('#toggle-plan').setAttribute('aria-expanded',String(open));$('#map-shell').classList.toggle('planning',open);if(open&&state.result?.status==='recommended')focusResult()}
 function boundsOptions(){const open=!$('#plan-panel').hidden;return {animate:false,paddingTopLeft:[45,85],paddingBottomRight:[open&&innerWidth>850?455:open&&innerWidth>580?395:45,65],maxZoom:16}}
 function restrictToShenyang(){

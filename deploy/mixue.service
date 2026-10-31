@@ -1,0 +1,25 @@
+[Unit]
+Description=Mixue Shenyang Map and Site Selection
+After=network.target
+
+[Service]
+Type=simple
+User=mixue
+Group=mixue
+WorkingDirectory=/opt/mixue/app
+Environment=PYTHONUNBUFFERED=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+EnvironmentFile=/etc/mixue.env
+ExecStart=/opt/mixue/venv/bin/gunicorn --bind 127.0.0.1:8877 --workers 1 --threads 4 --timeout 120 --access-logfile - app:app
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mixue/app/data
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

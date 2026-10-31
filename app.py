@@ -1,3 +1,4 @@
+import os
 import secrets
 import threading
 import uuid
@@ -17,13 +18,14 @@ from tea_site.place_search import search_saved_places
 app=Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD']=True
 app.config['MAX_CONTENT_LENGTH']=64*1024
+ALLOWED_HOSTS=set(os.environ.get('MIXUE_ALLOWED_HOSTS','localhost,127.0.0.1,::1').split(','))
 TOKEN=secrets.token_urlsafe(32)
 job_lock=threading.Lock(); jobs={}; cancellations={}
 
 @app.before_request
 def local_guard():
-    if request.host.split(':')[0] not in {'localhost','127.0.0.1','[::1]'}:
-        return jsonify(error='仅允许本机访问'),403
+    if urlsplit(request.host_url).hostname not in ALLOWED_HOSTS:
+        return jsonify(error='访问地址未获允许'),403
     if request.method=='POST':
         if request.headers.get('X-Research-Token')!=TOKEN:return jsonify(error='请刷新页面后重试'),403
         origin=request.headers.get('Origin')
@@ -54,7 +56,7 @@ def missing(exc):return jsonify(error='资源不存在'),404
 def index():
     files=[storage.ROOT/'data'/'maps'/f'shenyang-{kind}.pmtiles' for kind in ('streets',)]
     version='-'.join(str(p.stat().st_mtime_ns) if p.is_file() else 'missing' for p in files)
-    return render_template('index.html',token=TOKEN,map_version=version)
+    return render_template('index.html',token=TOKEN,map_version=version,base_path=os.environ.get('MIXUE_BASE_PATH','').rstrip('/'))
 
 @app.get('/maps/<name>.pmtiles')
 def offline_map(name):
@@ -76,6 +78,10 @@ def persist_job(jid,info):
 
 def start_job(kind,fn):
     if not job_lock.acquire(blocking=False):return jsonify(error='已有任务运行，请等待完成'),409
+    
+    for old in list(jobs):
+        if jobs[old].get('done') and len(jobs)>=8:
+            jobs.pop(old,None);cancellations.pop(old,None)
     jid=uuid.uuid4().hex[:12];jobs[jid]={'id':jid,'kind':kind,'done':False,'message':'准备中','created':now()};cancellations[jid]=threading.Event();persist_job(jid,{})
     def run():
         try:
@@ -124,4 +130,4 @@ def analyze_route():
 
 if __name__=='__main__':
     storage.connect().close()
-    app.run(host='127.0.0.1',port=8765,debug=False,threaded=True)
+    app.run(host='127.0.0.1',port=8877,debug=False,threaded=True)

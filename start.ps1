@@ -3,10 +3,10 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $taskPython = (Get-Command python -ErrorAction Stop).Source
 try {
-    $taskResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8765/api/status' -TimeoutSec 2 -UseBasicParsing
+    $taskResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8877/api/status' -TimeoutSec 2 -UseBasicParsing
     if ($taskResponse.StatusCode -eq 200) {
-        if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:8765/' }
-        Write-Output 'Tea Atlas is already running: http://127.0.0.1:8765/'
+        if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:8877/' }
+        Write-Output 'Tea Atlas is already running: http://127.0.0.1:8877/'
         exit 0
     }
 } catch {}
@@ -19,10 +19,10 @@ $taskProcess.Id | Set-Content -LiteralPath (Join-Path $taskLogDir 'server.pid')
 for ($taskAttempt=0; $taskAttempt -lt 30; $taskAttempt++) {
     $taskProcess.Refresh()
     if ($taskProcess.HasExited) { throw 'Server exited. See work/server.err.log.' }
-    try { $taskReady = Invoke-WebRequest -Uri 'http://127.0.0.1:8765/api/status' -TimeoutSec 1 -UseBasicParsing } catch { $taskReady = $null }
+    try { $taskReady = Invoke-WebRequest -Uri 'http://127.0.0.1:8877/api/status' -TimeoutSec 1 -UseBasicParsing } catch { $taskReady = $null }
     if ($taskReady.StatusCode -eq 200) {
-        Write-Output "Tea Atlas ready (PID $($taskProcess.Id)): http://127.0.0.1:8765/"
-        if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:8765/' }
+        Write-Output "Tea Atlas ready (PID $($taskProcess.Id)): http://127.0.0.1:8877/"
+        if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:8877/' }
         exit 0
     }
     Start-Sleep -Milliseconds 500

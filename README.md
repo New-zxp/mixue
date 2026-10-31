@@ -11,7 +11,7 @@ python -m pip install -r requirements.txt
 python app.py
 ```
 
-打开 http://127.0.0.1:8765/ 。Windows 也可运行 `start.ps1`，使用 `stop.ps1` 停止服务。
+打开 http://127.0.0.1:8877/ 。Windows 也可运行 `start.ps1`，使用 `stop.ps1` 停止服务。
 
 **已包含门店数据和街道地图，无需高德 Key。** 安装依赖后，展示、地点查找和分析均使用本地文件，不调用地图或地点搜索接口。
 

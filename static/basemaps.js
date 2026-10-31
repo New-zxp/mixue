@@ -2,7 +2,7 @@ function createBasemaps(map,ui){
  const extent=L.latLngBounds([39,120],[45,127]);
  const version=encodeURIComponent(ui.version||'1');
  const attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://protomaps.com">Protomaps</a>';
- const streets=protomapsL.leafletLayer({url:'/maps/shenyang-streets.pmtiles?v='+version,flavor:'white',lang:'zh-Hans',maxDataZoom:15,maxNativeZoom:16,maxZoom:19,updateWhenZooming:false,updateWhenIdle:true,keepBuffer:1,bounds:extent,noWrap:true,attribution});
+ const streets=protomapsL.leafletLayer({url:(document.querySelector('meta[name=app-base]')?.content||'')+'/maps/shenyang-streets.pmtiles?v='+version,flavor:'white',lang:'zh-Hans',maxDataZoom:15,maxNativeZoom:16,maxZoom:19,updateWhenZooming:false,updateWhenIdle:true,keepBuffer:1,bounds:extent,noWrap:true,attribution});
  const layers={streets};let mode='blank',active=null,timer;
  const states=new Map(Object.values(layers).map(layer=>[layer,{pending:new Set(),errors:new Set()}]));
  function hide(layer){const c=layer.getContainer();if(c)c.style.visibility='hidden'}
