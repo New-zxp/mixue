@@ -23,9 +23,6 @@ def parameters(raw):
         except (KeyError,ValueError,TypeError):raise ValueError('地点范围缺少有效坐标或距离') from None
         if not all(np.isfinite(v) for v in a.values()) or not(122<a['lon']<125 and 40<a['lat']<44 and 500<=a['radius_m']<=10000):raise ValueError('地点范围参数无效，仅支持沈阳九区')
         p['area']=a|{'name':str(area.get('name','指定地点')),'district':str(area.get('district',''))}
-        if 'gcj_lon' in area and 'gcj_lat' in area:
-            from .collector import valid_area
-            p['area']=valid_area(area)
     else:p['area']=None
     p['exclusions']=raw.get('exclusions',[])
     if not isinstance(p['exclusions'],list) or len(p['exclusions'])>100:raise ValueError('排除区域格式错误')

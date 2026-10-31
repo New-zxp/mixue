@@ -76,7 +76,7 @@ function restrictToShenyang(){
  const outer=cityBounds.pad(2);
  L.polygon([[outer.getSouthWest(),outer.getSouthEast(),outer.getNorthEast(),outer.getNorthWest()],...rings],{pane:'outside',stroke:false,fillColor:'#fff',fillOpacity:1,fillRule:'evenodd',interactive:false,smoothFactor:0}).addTo(map);
  map.setMaxBounds(cityBounds.pad(.15));
- const limitZoom=()=>map.setMinZoom(Math.max(8,Math.floor(map.getBoundsZoom(cityBounds,false,L.point(90,150)))));
+ const limitZoom=()=>{const size=map.getSize();if(size.x<200||size.y<200)return;map.setMinZoom(8);const zoom=map.getBoundsZoom(cityBounds,false,L.point(90,150));map.setMinZoom(Number.isFinite(zoom)?Math.max(8,Math.min(10,Math.floor(zoom))):8)};
  limitZoom();map.on('resize',limitZoom);
 }
 function fitRegion(){if(!state.data)return;map.stop();const code=$('#district').value;const rings=Object.entries(state.data.meta.boundaries||{}).filter(([id])=>!code||id===code).flatMap(([,b])=>b.rings.flatMap(r=>r.map(p=>[p[1],p[0]])));if(rings.length)map.fitBounds(rings,boundsOptions())}
